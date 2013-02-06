@@ -16,9 +16,17 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
+#include <string.h>
+#include <errno.h>
 
+#define BUF_SIZE 4096
+
+//#define DEBUG
+#ifdef DEBUG
 #define debug_print(fmt,args...) printf(fmt,##args)
-
+#else
+#define debug_print(fmt,args...)
+#endif
 char *uid_to_name(uid_t uid)
 {
 	static char name_str[10];
@@ -84,8 +92,10 @@ void show_info(char *file_name, struct stat *stat_info)
 {
 	char	*uid_to_name(), *ctime(), *gid_to_name(), *filemode();
 	void	mode_to_letters();
-		char    modestr[11];
+	char    modestr[11];
 
+
+	debug_print("file_name:%s\n", file_name);
 	mode_to_letters( stat_info->st_mode, modestr );
 
 	printf( "%s"    , modestr );
@@ -104,26 +114,59 @@ void do_stat(char *file_name)
 
 	if (stat(file_name, &file_info) < 0)
 	{
-		fprintf(stderr, "get file:%s stat error\n", file_name);
+		fprintf(stderr, "get file:%s stat error:%d\n", file_name, errno);
 		return;
 	}
 	else
 	{
-		show_info(file_name, &file_info);
+		debug_print("file_name:%s\n", file_name);
+		show_info(strrchr(file_name, '/') + 1, &file_info);
 	}
+}
+
+static int do_compare(const void *str1, const void *str2)
+{
+	return strcmp(* (char * const *) str1, * (char * const *)str2);
 }
 
 void do_ls(char *dir_name)
 {
 	struct dirent *direntry;
 	DIR *dir = opendir(dir_name);
+	char *file_array[BUF_SIZE];
+	char full_path_and_name[512];
+	int idx = 0, i = 0;
+
+	memset(file_array, 0, sizeof(char *) * BUF_SIZE);
 
 	if (dir == NULL)
 		return;
 
 	while((direntry = readdir(dir)) != NULL)
 	{
-		do_stat(direntry->d_name);
+		file_array[idx]= malloc(strlen(direntry->d_name) + 1);
+		strcpy(file_array[idx], direntry->d_name);
+		file_array[idx][strlen(direntry->d_name)] = '\0';
+		debug_print("file name:%s\n", file_array[idx]);
+		idx++;
+	}
+
+	debug_print("starting to qsort ========================================\n");
+	debug_print("size:%d\n", sizeof(file_array[0]));
+	qsort(&file_array[0], idx, sizeof(file_array[0]), do_compare);
+
+	for (i = 0; i < idx; i++)
+		debug_print("array name:%s\n", file_array[i]);
+
+	debug_print("qsort done ==============================================\n");
+
+	strcpy(full_path_and_name, dir_name);
+	for (i = 0; i < idx; i++)
+	{
+		full_path_and_name[strlen(dir_name)] = '\0';
+		strcat(full_path_and_name, file_array[i]);
+		debug_print("full name:%s\n", full_path_and_name);
+		do_stat(full_path_and_name);
 	}
 
 	closedir(dir);
